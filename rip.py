@@ -1,7 +1,7 @@
 import subprocess
 import sys
 
-MEDIA_DIR = "/mnt/data/media"
+MEDIA_DIR = "/mnt/data1/media"
 
 def invalid_usage():
     print("Invalid usage. Examples:")
