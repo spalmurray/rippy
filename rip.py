@@ -159,7 +159,7 @@ if __name__ == "__main__":
 
         subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
 
-        print(f"Done!\nOutput: {media_dir}/{filename}.mkv")
+        print(f"Done!\nOutput: {media_dir}/{filename}{' - ' + quality if quality else ''}.mkv")
         sys.exit()
 
     # Show
