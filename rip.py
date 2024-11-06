@@ -7,6 +7,7 @@ def invalid_usage():
     print("Invalid usage. Examples:")
     print("rip.py movie [Movie filename]")
     print("rip.py show [Show filename] [Season #] [Start Episode #] [End Episode #] [Min length (in minutes)] [Max length (in minutes)]")
+    print("rip.py shuffle [Show filename] [path to episode mapping file]")
 
 
 if __name__ == "__main__":
@@ -18,11 +19,15 @@ if __name__ == "__main__":
         invalid_usage()
         sys.exit()
 
-    if sys.argv[1] == "show" and len(sys.argv) < 5:
+    if sys.argv[1] == "show" and len(sys.argv) < 8:
         invalid_usage()
         sys.exit()
 
-    if sys.argv[1] != "show" and sys.argv[1] != "movie":
+    if sys.argv[1] == "shuffle" and len(sys.argv) < 4:
+        invalid_usage()
+        sys.exit()
+
+    if sys.argv[1] != "show" and sys.argv[1] != "movie" and sys.argv[1] != "shuffle":
         invalid_usage()
         sys.exit()
 
@@ -32,7 +37,34 @@ if __name__ == "__main__":
     if name.endswith(".mkv"):
         name = name[:-4]
 
-    media_dir = f"{MEDIA_DIR}/{type}s/{name}"
+    media_dir = f"{MEDIA_DIR}/{type if type != 'shuffle' else 'show'}s/{name}"
+    
+    if type == "shuffle":
+        mapping_file = sys.argv[3]
+        mapping = {}
+        with open(mapping_file, 'r') as f:
+            line = f.readline()
+            while line:
+                if line.startswith('Season '):
+                    season = f"0{int(line[7:-2])}"[-2:]
+                    mapping[season] = {}
+                    line = f.readline()
+                    while line and not line.startswith('Season '):
+                        old, new = line.split(': ')
+                        old = f"0{int(old)}"[-2:]
+                        new = f"0{int(new)}"[-2:]
+                        mapping[season][old] = new
+                        line = f.readline()
+
+        for season in mapping:
+            for episode in mapping[season]:
+                subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}.mkv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv"], capture_output=True)
+
+            for episode in mapping[season]:
+                subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv", f"{media_dir}/Season {season}/Episode S{season}E{mapping[season][episode]}.mkv"], capture_output=True)
+                print("moved", "season", season, "episode", episode, "to", mapping[season][episode])
+
+        sys.exit()
 
     subprocess.run(["mkdir", media_dir], capture_output=True)
 
