@@ -5,7 +5,7 @@ MEDIA_DIR = "/mnt/data1/media"
 
 def invalid_usage():
     print("Invalid usage. Examples:")
-    print("rip.py movie [Movie filename]")
+    print("rip.py movie [Movie filename] [optional: quality (e.g., 1080p, 4k)]")
     print("rip.py show [Show filename] [Season #] [Start Episode #] [End Episode #] [Min length (in minutes)] [Max length (in minutes)]")
     print("rip.py shuffle [Show filename] [path to episode mapping file]")
 
@@ -147,12 +147,15 @@ if __name__ == "__main__":
         subprocess.run(["makemkvcon", "mkv", "disc:0", title, f"{media_dir}/tmp"], capture_output=True)
 
         filename = f"{name}"
+        quality = None
+        if len(sys.argv) > 3:
+            quality = sys.argv[3]
 
         tmp_contents = subprocess.run(["ls", f"{media_dir}/tmp"], capture_output=True).stdout.decode('utf-8').split('\n')[:-1]
 
         for file in tmp_contents:
             ext = file.split('.')[-1]
-            subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}.{ext}"], capture_output=True)
+            subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}{' - ' + quality if quality else ''}.{ext}"], capture_output=True)
 
         subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
 
