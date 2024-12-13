@@ -1,7 +1,9 @@
 import subprocess
 import sys
+import os
 
 MEDIA_DIR = "/mnt/data1/media"
+DRIVE_NUM = os.environ["DRIVE_NUM"] or "0"
 
 def invalid_usage():
     print("Invalid usage. Examples:")
@@ -86,7 +88,7 @@ if __name__ == "__main__":
 
 
     print("\nScanning titles...")
-    info = subprocess.run(["makemkvcon", "-r", "info", "disc:0"], capture_output=True).stdout.decode('utf-8').split('\n')
+    info = subprocess.run(["makemkvcon", "-r", "info", f"disc:{DRIVE_NUM}"], capture_output=True).stdout.decode('utf-8').split('\n')
 
     titles = []
 
@@ -144,7 +146,7 @@ if __name__ == "__main__":
         print(f"\nRipping title {title}...\n")
 
         subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
-        subprocess.run(["makemkvcon", "mkv", "disc:0", title, f"{media_dir}/tmp"], capture_output=True)
+        subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
 
         filename = f"{name}"
         quality = None
@@ -180,7 +182,7 @@ if __name__ == "__main__":
         print(f"\nRipping title {title} as episode {episode}...")
     
         subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
-        subprocess.run(["makemkvcon", "mkv", "disc:0", title, f"{media_dir}/tmp"], capture_output=True)
+        subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
 
         episode_str = f"0{episode}"[-2:]
         filename = f"Episode S{season_str}E{episode_str}"
