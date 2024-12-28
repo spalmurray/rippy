@@ -4,7 +4,7 @@ import os
 
 MOVIE_DIR = "/mnt/data1/media/movies"
 SHOW_DIR = "/mnt/data2/media/shows"
-DRIVE_NUM = os.environ["DRIVE_NUM"] or "0"
+DRIVE_NUM = os.environ.get("DRIVE_NUM", "0")
 
 def invalid_usage():
     print("Invalid usage. Examples:")
