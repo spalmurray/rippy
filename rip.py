@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
         sys.exit()
 
-    res = subprocess.run(["mkdir", media_dir], capture_output=True)
+    res = subprocess.run(["mkdir", "-p", media_dir], capture_output=True)
     res.check_returncode()
 
     if type == "show":
