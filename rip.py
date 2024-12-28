@@ -2,7 +2,8 @@ import subprocess
 import sys
 import os
 
-MEDIA_DIR = "/mnt/data1/media"
+MOVIE_DIR = "/mnt/data1/media/movies"
+SHOW_DIR = "/mnt/data2/media/shows"
 DRIVE_NUM = os.environ["DRIVE_NUM"] or "0"
 
 def invalid_usage():
@@ -39,7 +40,7 @@ if __name__ == "__main__":
     if name.endswith(".mkv"):
         name = name[:-4]
 
-    media_dir = f"{MEDIA_DIR}/{type if type != 'shuffle' else 'show'}s/{name}"
+    media_dir = f"{MOVIE_DIR if type == 'movie' else SHOW_DIR}/{name}"
     
     if type == "shuffle":
         mapping_file = sys.argv[3]
@@ -60,15 +61,18 @@ if __name__ == "__main__":
 
         for season in mapping:
             for episode in mapping[season]:
-                subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}.mkv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv"], capture_output=True)
+                res = subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}.mkv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv"], capture_output=True)
+                res.check_returncode()
 
             for episode in mapping[season]:
-                subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv", f"{media_dir}/Season {season}/Episode S{season}E{mapping[season][episode]}.mkv"], capture_output=True)
+                res = subprocess.run(["mv", f"{media_dir}/Season {season}/Episode S{season}E{episode}tmp.mkv", f"{media_dir}/Season {season}/Episode S{season}E{mapping[season][episode]}.mkv"], capture_output=True)
+                res.check_returncode()
                 print("moved", "season", season, "episode", episode, "to", mapping[season][episode])
 
         sys.exit()
 
-    subprocess.run(["mkdir", media_dir], capture_output=True)
+    res = subprocess.run(["mkdir", media_dir], capture_output=True)
+    res.check_returncode()
 
     if type == "show":
         try:
@@ -81,7 +85,8 @@ if __name__ == "__main__":
 
             media_dir = f"{media_dir}/Season {season}"
 
-            subprocess.run(["mkdir", media_dir], capture_output=True)
+            res = subprocess.run(["mkdir", media_dir], capture_output=True)
+            res.check_returncode()
         except:
             invalid_usage()
             sys.exit()
@@ -145,8 +150,10 @@ if __name__ == "__main__":
 
         print(f"\nRipping title {title}...\n")
 
-        subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
-        subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
+        res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
 
         filename = f"{name}"
         quality = None
@@ -157,9 +164,11 @@ if __name__ == "__main__":
 
         for file in tmp_contents:
             ext = file.split('.')[-1]
-            subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}{' - ' + quality if quality else ''}.{ext}"], capture_output=True)
+            res = subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}{' - ' + quality if quality else ''}.{ext}"], capture_output=True)
+            res.check_returncode()
 
-        subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
 
         print(f"Done!\nOutput: {media_dir}/{filename}{' - ' + quality if quality else ''}.mkv")
         sys.exit()
@@ -181,8 +190,10 @@ if __name__ == "__main__":
 
         print(f"\nRipping title {title} as episode {episode}...")
     
-        subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
-        subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
+        res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
 
         episode_str = f"0{episode}"[-2:]
         filename = f"Episode S{season_str}E{episode_str}"
@@ -191,9 +202,11 @@ if __name__ == "__main__":
 
         for file in tmp_contents:
             ext = file.split('.')[-1]
-            subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}.{ext}"], capture_output=True)
+            res = subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}.{ext}"], capture_output=True)
+            res.check_returncode()
 
-        subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
+        res.check_returncode()
 
         print(f"Done!\nOutput: {media_dir}/{filename}.mkv")
 
