@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
             media_dir = f"{media_dir}/Season {season}"
 
-            res = subprocess.run(["mkdir", media_dir], capture_output=True)
+            res = subprocess.run(["mkdir", "-p", media_dir], capture_output=True)
             res.check_returncode()
         except:
             invalid_usage()
