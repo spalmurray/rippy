@@ -150,7 +150,7 @@ if __name__ == "__main__":
 
         print(f"\nRipping title {title}...\n")
 
-        res = subprocess.run(["mkdir", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
+        res = subprocess.run(["mkdir", "-p", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
         res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
         print(f"\nRipping title {title} as episode {episode}...")
     
-        res = subprocess.run(["mkdir", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
+        res = subprocess.run(["mkdir", "-p", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
         res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
