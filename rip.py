@@ -150,9 +150,9 @@ if __name__ == "__main__":
 
         print(f"\nRipping title {title}...\n")
 
-        res = subprocess.run(["mkdir", f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["mkdir", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
-        res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["makemkvcon", "mkv", f"disc:{DRIVE_NUM}", title, f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True)
         res.check_returncode()
 
         filename = f"{name}"
@@ -160,14 +160,14 @@ if __name__ == "__main__":
         if len(sys.argv) > 3:
             quality = sys.argv[3]
 
-        tmp_contents = subprocess.run(["ls", f"{media_dir}/tmp"], capture_output=True).stdout.decode('utf-8').split('\n')[:-1]
+        tmp_contents = subprocess.run(["ls", f"{media_dir}/{DRIVE_NUM}/tmp"], capture_output=True).stdout.decode('utf-8').split('\n')[:-1]
 
         for file in tmp_contents:
             ext = file.split('.')[-1]
-            res = subprocess.run(["mv", f"{media_dir}/tmp/{file}", f"{media_dir}/{filename}{' - ' + quality if quality else ''}.{ext}"], capture_output=True)
+            res = subprocess.run(["mv", f"{media_dir}/{DRIVE_NUM}/tmp/{file}", f"{media_dir}/{filename}{' - ' + quality if quality else ''}.{ext}"], capture_output=True)
             res.check_returncode()
 
-        res = subprocess.run(["rm", "-r", f"{media_dir}/tmp"], capture_output=True)
+        res = subprocess.run(["rm", "-r", f"{media_dir}/{DRIVE_NUM}"], capture_output=True)
         res.check_returncode()
 
         print(f"Done!\nOutput: {media_dir}/{filename}{' - ' + quality if quality else ''}.mkv")
