@@ -112,11 +112,14 @@ if __name__ == "__main__":
         line_value = fields[3]
         title_name = '"Unknown"'
         title_runtime = ["0", "00", "00"]
+        title_filename ='Unknown filename'
         while line_title_id == title_id:
             if line_type == "2":
                 title_name = line_value
             elif line_type == "9":
                 title_runtime = line_value.strip('"').split(':')
+            elif line_type == "16":
+                title_filename = line_value.strip('"')
 
             i += 1
             if i not in range(len(info)):
@@ -135,15 +138,17 @@ if __name__ == "__main__":
         title_runtime_minutes = int(title_runtime[0]) * 60 + int(title_runtime[1])
         if type == "show" and (title_runtime_minutes < min_length or title_runtime_minutes > max_length):
             continue
-        titles.append((title_id, title_name, title_runtime[0], title_runtime[1], title_runtime[2]))
+        titles.append((title_id, title_name, title_runtime[0], title_runtime[1], title_runtime[2], title_filename))
 
     # sort titles by runtime if it's a movie, we probably want just the longest one in that case.
     if type == "movie":
         titles.sort(reverse=True, key=lambda x: int(x[2]) * 3600 + int(x[3]) * 60 + int(x[4]))
+    elif type == "show":
+        titles.sort(key=lambda x: x[5])
 
     print("\nTitles:")
     for title in titles:
-        print(f"Title {title[0]}: {title[1]} ({title[2]}:{title[3]}:{title[4]})")
+        print(f"Title {title[0]}: {title[1]} ({title[2]}:{title[3]}:{title[4]}) - {title[5]}")
 
     if type == "movie":
         title = input("\nWhich title number would you like to rip?\n")
