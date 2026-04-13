@@ -183,15 +183,24 @@ for input_file in "${mkv_files[@]}"; do
         echo "  $input_file"
     fi
 
+    # Get bitrate based on resolution
+    bitrate=$(get_bitrate "$input_file")
+
+    # Skip if file bitrate is already at or near target
+    target_bps=$(echo "$bitrate" | sed 's/M//' | awk '{printf "%.0f", $1 * 1000000}')
+    file_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
+    if [ -n "$file_bitrate" ] && [ "$file_bitrate" -le $((target_bps + target_bps / 10)) ]; then
+        echo "Skipping $input_file (bitrate ${file_bitrate} bps already within 10% of target ${bitrate})"
+        success_count=$((success_count + 1))
+        continue
+    fi
+
     echo "Starting compression..."
 
     # Write to a temp file, then replace the original
     input_dir=$(dirname "$input_file")
     tmp_output=$(mktemp "${input_dir}/compress_mkv_XXXXXX.mkv")
     rm "$tmp_output"
-
-    # Get bitrate based on resolution
-    bitrate=$(get_bitrate "$input_file")
 
     # Detect if input is HDR
     input_is_hdr=false
