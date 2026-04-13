@@ -207,7 +207,7 @@ for input_file in "${mkv_files[@]}"; do
             -b:v "$bitrate" \
             -vf "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p" \
             -c:v libx265 \
-            -c:a copy \
+            -c:a copy -c:s copy \
             "$tmp_output"
     elif $input_is_hdr; then
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
@@ -220,11 +220,11 @@ for input_file in "${mkv_files[@]}"; do
             -color_trc smpte2084 \
             -colorspace bt2020nc \
             -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
-            -c:a copy \
+            -c:a copy -c:s copy \
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg -i "$input_file" -map 0 -b:v "$bitrate" -c:v libx265 -c:a copy "$tmp_output"
+        ffmpeg -i "$input_file" -map 0 -b:v "$bitrate" -c:v libx265 -c:a copy -c:s copy "$tmp_output"
     fi
 
     # Move compressed file to final location
