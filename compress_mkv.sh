@@ -27,21 +27,25 @@ fi
 input_path="$1"
 output_sdr=false
 overwrite=false
+shifted=false
 
 # Check for --sdr and --overwrite flags
-if [ "$1" = "--sdr" ]; then
-    output_sdr=true
-    input_path="$2"
-elif [ "$1" = "--overwrite" ]; then
-    overwrite=true
-    input_path="$2"
-elif [ "$2" = "--sdr" ]; then
-    output_sdr=true
-    input_path="$1"
-elif [ "$2" = "--overwrite" ]; then
-    overwrite=true
-    input_path="$1"
-fi
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --sdr)
+            output_sdr=true
+            shift
+            ;;
+        --overwrite)
+            overwrite=true
+            shift
+            ;;
+        *)
+            input_path="$1"
+            shift
+            ;;
+    esac
+done
 
 if [ -z "$input_path" ]; then
     echo "Error: No input path provided."
@@ -103,8 +107,8 @@ else
 fi
 
 # Get the directory and filename
-input_dir=$(dirname "$input_file")
-input_name=$(basename "$input_file" .mkv)
+input_dir=$(dirname "$input_path")
+input_name=$(basename "$input_path")
 
 # Check if input file is actually an MKV
 if [[ ! "$input_file" =~ \.mkv$ ]]; then
@@ -198,15 +202,27 @@ for input_file in "${mkv_files[@]}"; do
     # Get bitrate based on resolution
     bitrate=$(get_bitrate "$input_file")
 
+    # Get resolution to determine HDR/SDR
+    resolution=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$input_file" 2>/dev/null)
+
+    if [ -z "$resolution" ]; then
+        # Fallback to default if can't detect resolution
+        resolution="1920x1080"
+    fi
+
+    local width height
+    IFS='x' read -r width height <<< "$resolution"
+
+    is_4k=false
+    if [ "$width" -ge 3840 ]; then
+        is_4k=true
+    fi
+
+    # Determine output mode
     if $output_sdr; then
-        echo "Mode: SDR output"
-        echo "Applying tone mapping to preserve highlights..."
-
-        # Get video codec information to detect HDR
-        video_codec=$(ffmpeg -hide_banner -i "$input_file" 2>&1 | grep "Video:" | head -n 1)
-
-        if echo "$video_codec" | grep -iq "hdr\|10bit\|bt2020\|smpte2084\|hlg"; then
-            echo "Detected HDR input - applying HDR→SDR tone mapping"
+        echo "Mode: SDR output (tone mapping enabled)"
+        if $is_4k; then
+            echo "Detected 4K input - applying HDR→SDR tone mapping"
             ffmpeg -i "$input_file" \
                 -b:v "$bitrate" \
                 -vf tonemap=tonemapping=reinhard:desat=0:peak=1.0 \
@@ -214,20 +230,26 @@ for input_file in "${mkv_files[@]}"; do
                 -c:v libx265 \
                 "$output_file"
         else
-            echo "Detected SDR input - standard compression"
+            echo "Detected 1080p input - standard SDR compression"
             ffmpeg -i "$input_file" -b:v "$bitrate" -c:v libx265 "$output_file"
         fi
     else
-        echo "Mode: HDR10 output (preserving 10-bit color)"
-        ffmpeg -i "$input_file" \
-            -b:v "$bitrate" \
-            -c:v libx265 \
-            -pix_fmt yuv420p10le \
-            -color_primaries bt2020 \
-            -color_trc smpte2084 \
-            -colorspace bt2020nc \
-            -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
-            "$output_file"
+        # No --sdr flag: assume 4K is HDR, 1080p is SDR
+        if $is_4k; then
+            echo "Mode: HDR10 output (4K input, 10-bit color)"
+            ffmpeg -i "$input_file" \
+                -b:v "$bitrate" \
+                -c:v libx265 \
+                -pix_fmt yuv420p10le \
+                -color_primaries bt2020 \
+                -color_trc smpte2084 \
+                -colorspace bt2020nc \
+                -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
+                "$output_file"
+        else
+            echo "Mode: SDR output (1080p input)"
+            ffmpeg -i "$input_file" -b:v "$bitrate" -c:v libx265 "$output_file"
+        fi
     fi
 
     success_count=$((success_count + 1))
