@@ -19,19 +19,27 @@ if [ $# -eq 0 ]; then
     echo "Examples:"
     echo "  $0 movie.mkv                           # Compress to HDR10"
     echo "  $0 movie.mkv --sdr                      # Compress to SDR (tone mapped)"
+    echo "  $0 movie.mkv --overwrite               # Skip backup, overwrite existing output"
     echo "  $0 /path/to/show/                      # Compress all MKV files in directory"
     exit 1
 fi
 
 input_path="$1"
 output_sdr=false
+overwrite=false
 
-# Check for --sdr flag
+# Check for --sdr and --overwrite flags
 if [ "$1" = "--sdr" ]; then
     output_sdr=true
     input_path="$2"
+elif [ "$1" = "--overwrite" ]; then
+    overwrite=true
+    input_path="$2"
 elif [ "$2" = "--sdr" ]; then
     output_sdr=true
+    input_path="$1"
+elif [ "$2" = "--overwrite" ]; then
+    overwrite=true
     input_path="$1"
 fi
 
@@ -106,13 +114,17 @@ fi
 # Output file path
 output_file="${input_dir}/${input_name}.mkv"
 
-# Handle existing output file by moving to .mkv.old
+# Handle existing output file
 if [ -f "$output_file" ]; then
-    old_output="${output_file}.old"
-    echo "Warning: Output file already exists: $output_file"
-    echo "Moving to: $old_output"
-    mv "$output_file" "$old_output"
-    echo ""
+    if [ "$overwrite" = true ]; then
+        echo "Overwriting existing file: $output_file"
+    else
+        old_output="${output_file}.old"
+        echo "Warning: Output file already exists: $output_file"
+        echo "Moving to: $old_output"
+        mv "$output_file" "$old_output"
+        echo ""
+    fi
 fi
 
 # Determine bitrate based on resolution
