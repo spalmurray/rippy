@@ -24,27 +24,29 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-input_path="$1"
 output_sdr=false
 overwrite=false
-shifted=false
+input_path=""
 
-# Check for --sdr and --overwrite flags
+# Parse arguments
 while [ $# -gt 0 ]; do
     case "$1" in
         --sdr)
             output_sdr=true
-            shift
             ;;
         --overwrite)
             overwrite=true
-            shift
             ;;
         *)
-            input_path="$1"
-            shift
+            if [ -z "$input_path" ]; then
+                input_path="$1"
+            else
+                echo "Error: Unexpected argument '$1'"
+                exit 1
+            fi
             ;;
     esac
+    shift
 done
 
 if [ -z "$input_path" ]; then
@@ -71,7 +73,7 @@ if [ -d "$input_path" ]; then
     mkv_files=()
     while IFS= read -r -d '' file; do
         mkv_files+=("$file")
-    done < <(find "$input_path" -type f -name "*.mkv" -maxdepth 2 -print0)
+    done < <(find "$input_path" -maxdepth 2 -type f -name "*.mkv" -print0)
 
     # Check if any files were found
     if [ ${#mkv_files[@]} -eq 0 ]; then
@@ -106,30 +108,18 @@ else
     mkv_files=("$input_path")
 fi
 
-# Get the directory and filename
-input_dir=$(dirname "$input_path")
-input_name=$(basename "$input_path" .mkv)
-
-# Check if input file is actually an MKV
-if [[ ! "$input_path" =~ \.mkv$ ]]; then
+# Check if input file is actually an MKV (single file mode only)
+if [ -f "$input_path" ] && [[ ! "$input_path" =~ \.mkv$ ]]; then
     echo "Warning: Input file doesn't have .mkv extension. Proceeding anyway..."
 fi
 
-# Output file path
-output_file="${input_dir}/${input_name}.mkv"
-
-# Handle existing output file
-if [ -f "$output_file" ]; then
-    if [ "$overwrite" = true ]; then
-        echo "Overwriting existing file: $output_file"
-    else
-        old_output="${output_file}.old"
-        echo "Warning: Output file already exists: $output_file"
-        echo "Moving to: $old_output"
-        mv "$output_file" "$old_output"
-        echo ""
-    fi
-fi
+# Detect if a file has HDR color transfer characteristics
+is_hdr() {
+    local transfer
+    transfer=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=s=x:p=0 "$1" 2>/dev/null)
+    # smpte2084 = PQ (HDR10), arib-std-b67 = HLG
+    [[ "$transfer" == "smpte2084" || "$transfer" == "arib-std-b67" ]]
+}
 
 # Determine bitrate based on resolution
 get_bitrate() {
@@ -158,17 +148,18 @@ get_bitrate() {
 if [ ${#mkv_files[@]} -eq 1 ]; then
     bitrate=$(get_bitrate "$input_path")
 
-    if $output_sdr; then
-        mode_text="SDR output"
+    if $output_sdr && is_hdr "$input_path"; then
+        mode_text="SDR output (HDR→SDR tone mapping)"
+    elif is_hdr "$input_path"; then
+        mode_text="HDR10 passthrough"
     else
-        mode_text="HDR10 output"
+        mode_text="SDR output"
     fi
 
     echo "======================================"
     echo "MKV Compression Tool"
     echo "======================================"
     echo "Input:  $input_path"
-    echo "Output: $output_file"
     echo "Mode:   $mode_text"
     echo "Bitrate: $bitrate"
     echo "======================================"
@@ -190,65 +181,58 @@ for input_file in "${mkv_files[@]}"; do
         echo ""
         echo "Processing file $((success_count + 1)) of $total_files:"
         echo "  $input_file"
-
-        # Get output path
-        input_dir=$(dirname "$input_file")
-        input_name=$(basename "$input_file" .mkv)
-        output_file="${input_dir}/${input_name}.mkv"
     fi
 
     echo "Starting compression..."
 
+    # Write to a temp file, then replace the original
+    input_dir=$(dirname "$input_file")
+    tmp_output=$(mktemp "${input_dir}/compress_mkv_XXXXXX.mkv")
+
     # Get bitrate based on resolution
     bitrate=$(get_bitrate "$input_file")
 
-    # Get resolution to determine HDR/SDR
-    resolution=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$input_file" 2>/dev/null)
-
-    if [ -z "$resolution" ]; then
-        # Fallback to default if can't detect resolution
-        resolution="1920x1080"
-    fi
-
-    IFS='x' read -r width height <<< "$resolution"
-
-    is_4k=false
-    if [ "$width" -ge 3840 ]; then
-        is_4k=true
+    # Detect if input is HDR
+    input_is_hdr=false
+    if is_hdr "$input_file"; then
+        input_is_hdr=true
     fi
 
     # Determine output mode
-    if $output_sdr; then
-        echo "Mode: SDR output (tone mapping enabled)"
-        if $is_4k; then
-            echo "Detected 4K input - applying HDR→SDR tone mapping"
-            ffmpeg -i "$input_file" \
-                -b:v "$bitrate" \
-                -vf tonemap=tonemapping=reinhard:desat=0:peak=1.0 \
-                -pix_fmt yuv420p \
-                -c:v libx265 \
-                "$output_file"
-        else
-            echo "Detected 1080p input - standard SDR compression"
-            ffmpeg -i "$input_file" -b:v "$bitrate" -c:v libx265 "$output_file"
-        fi
+    if $output_sdr && $input_is_hdr; then
+        echo "Mode: SDR output (HDR→SDR tone mapping)"
+        ffmpeg -i "$input_file" \
+            -map 0 \
+            -b:v "$bitrate" \
+            -vf "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p" \
+            -c:v libx265 \
+            -c:a copy \
+            "$tmp_output"
+    elif $input_is_hdr; then
+        echo "Mode: HDR10 passthrough (preserving HDR metadata)"
+        ffmpeg -i "$input_file" \
+            -map 0 \
+            -b:v "$bitrate" \
+            -c:v libx265 \
+            -pix_fmt yuv420p10le \
+            -color_primaries bt2020 \
+            -color_trc smpte2084 \
+            -colorspace bt2020nc \
+            -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
+            -c:a copy \
+            "$tmp_output"
     else
-        # No --sdr flag: assume 4K is HDR, 1080p is SDR
-        if $is_4k; then
-            echo "Mode: HDR10 output (4K input, 10-bit color)"
-            ffmpeg -i "$input_file" \
-                -b:v "$bitrate" \
-                -c:v libx265 \
-                -pix_fmt yuv420p10le \
-                -color_primaries bt2020 \
-                -color_trc smpte2084 \
-                -colorspace bt2020nc \
-                -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
-                "$output_file"
-        else
-            echo "Mode: SDR output (1080p input)"
-            ffmpeg -i "$input_file" -b:v "$bitrate" -c:v libx265 "$output_file"
-        fi
+        echo "Mode: SDR output"
+        ffmpeg -i "$input_file" -map 0 -b:v "$bitrate" -c:v libx265 -c:a copy "$tmp_output"
+    fi
+
+    # Move compressed file to final location
+    if [ "$overwrite" = true ]; then
+        mv "$tmp_output" "$input_file"
+    else
+        output_file="${input_file%.mkv}_compressed.mkv"
+        mv "$tmp_output" "$output_file"
+        echo "Output: $output_file"
     fi
 
     success_count=$((success_count + 1))
@@ -262,6 +246,5 @@ if [ ${#mkv_files[@]} -gt 1 ]; then
     echo "Processed: $success_count / $total_files files"
 else
     echo "Compression complete!"
-    echo "Output: $output_file"
 fi
 echo "======================================"
