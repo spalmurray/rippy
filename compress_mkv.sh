@@ -108,10 +108,10 @@ fi
 
 # Get the directory and filename
 input_dir=$(dirname "$input_path")
-input_name=$(basename "$input_path")
+input_name=$(basename "$input_path" .mkv)
 
 # Check if input file is actually an MKV
-if [[ ! "$input_file" =~ \.mkv$ ]]; then
+if [[ ! "$input_path" =~ \.mkv$ ]]; then
     echo "Warning: Input file doesn't have .mkv extension. Proceeding anyway..."
 fi
 
@@ -210,7 +210,6 @@ for input_file in "${mkv_files[@]}"; do
         resolution="1920x1080"
     fi
 
-    local width height
     IFS='x' read -r width height <<< "$resolution"
 
     is_4k=false
