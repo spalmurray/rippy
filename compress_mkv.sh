@@ -188,6 +188,7 @@ for input_file in "${mkv_files[@]}"; do
     # Write to a temp file, then replace the original
     input_dir=$(dirname "$input_file")
     tmp_output=$(mktemp "${input_dir}/compress_mkv_XXXXXX.mkv")
+    rm "$tmp_output"
 
     # Get bitrate based on resolution
     bitrate=$(get_bitrate "$input_file")
