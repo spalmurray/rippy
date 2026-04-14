@@ -236,12 +236,12 @@ for input_file in "${mkv_files[@]}"; do
         sdr_plain_vf="format=nv12,hwupload"
         hdr_extra=()
     elif [ "$gpu" = "qsv" ]; then
-        hw_init="-init_hw_device qsv=qsv:hw -filter_hw_device qsv"
-        encoder="hevc_qsv"
-        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload=extra_hw_frames=64"
-        hdr_vf="format=p010le,hwupload=extra_hw_frames=64"
-        sdr_plain_vf="format=nv12,hwupload=extra_hw_frames=64"
-        hdr_extra=()
+        hw_init="-vaapi_device /dev/dri/renderD128"
+        encoder="hevc_vaapi"
+        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload"
+        hdr_vf="format=p010,hwupload"
+        sdr_plain_vf="format=nv12,hwupload"
+        hdr_extra=(-low_power 1)
     fi
 
     # Determine output mode
