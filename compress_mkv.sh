@@ -202,7 +202,7 @@ for input_file in "${mkv_files[@]}"; do
     target_bps=$(echo "$bitrate" | sed 's/M//' | awk '{printf "%.0f", $1 * 1000000}')
     file_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
     if [ -n "$file_bitrate" ] && [ "$file_bitrate" -le $((target_bps + target_bps / 2)) ]; then
-        echo "Skipping $input_file (bitrate ${file_bitrate} bps already within 10% of target ${bitrate})"
+        echo "Skipping $input_file (bitrate ${file_bitrate} bps already within 50% of target ${bitrate})"
         success_count=$((success_count + 1))
         continue
     fi
