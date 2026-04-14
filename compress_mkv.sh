@@ -248,7 +248,7 @@ for input_file in "${mkv_files[@]}"; do
     if $output_sdr && $input_is_hdr; then
         echo "Mode: SDR output (HDR→SDR tone mapping)"
         ffmpeg $hw_init -i "$input_file" \
-            -map 0 \
+            -map 0:v -map 0:a:m:language:eng -map 0:s:m:language:eng \
             -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" \
             -vf "$sdr_vf" \
             -c:v "$encoder" \
@@ -257,7 +257,7 @@ for input_file in "${mkv_files[@]}"; do
     elif $input_is_hdr; then
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
         ffmpeg $hw_init -i "$input_file" \
-            -map 0 \
+            -map 0:v -map 0:a:m:language:eng -map 0:s:m:language:eng \
             -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" \
             ${hdr_vf:+-vf "$hdr_vf"} \
             -c:v "$encoder" \
@@ -269,7 +269,7 @@ for input_file in "${mkv_files[@]}"; do
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg $hw_init -i "$input_file" -map 0 -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy -c:s copy "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng -map 0:s:m:language:eng -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy -c:s copy "$tmp_output"
     fi
 
     # Move compressed file to final location
