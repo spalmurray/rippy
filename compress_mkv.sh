@@ -7,18 +7,21 @@ set -e
 
 # Check if a filename was provided
 if [ $# -eq 0 ]; then
-    echo "Usage: $0 <input> [--sdr]"
+    echo "Usage: $0 <input> [--sdr] [--gpu vaapi|qsv]"
     echo ""
     echo "Options:"
     echo "  <input>       Path to input MKV file or directory"
     echo "  --sdr         Force SDR output (tone mapping from HDR input)"
     echo "                If not specified, outputs HDR10 (10-bit color)"
+    echo "  --gpu <type>  Use GPU hardware acceleration (vaapi for AMD, qsv for Intel)"
     echo ""
     echo "Note: Output is always in MKV format to preserve multiple audio tracks"
     echo ""
     echo "Examples:"
     echo "  $0 movie.mkv                           # Compress to HDR10"
     echo "  $0 movie.mkv --sdr                      # Compress to SDR (tone mapped)"
+    echo "  $0 movie.mkv --gpu vaapi                # Use AMD GPU"
+    echo "  $0 movie.mkv --gpu qsv                  # Use Intel GPU"
     echo "  $0 movie.mkv --overwrite               # Skip backup, overwrite existing output"
     echo "  $0 /path/to/show/                      # Compress all MKV files in directory"
     exit 1
@@ -26,6 +29,7 @@ fi
 
 output_sdr=false
 overwrite=false
+gpu=""
 input_path=""
 
 # Parse arguments
@@ -36,6 +40,14 @@ while [ $# -gt 0 ]; do
             ;;
         --overwrite)
             overwrite=true
+            ;;
+        --gpu)
+            shift
+            gpu="$1"
+            if [[ "$gpu" != "vaapi" && "$gpu" != "qsv" ]]; then
+                echo "Error: --gpu must be 'vaapi' or 'qsv'"
+                exit 1
+            fi
             ;;
         *)
             if [ -z "$input_path" ]; then
@@ -208,32 +220,56 @@ for input_file in "${mkv_files[@]}"; do
         input_is_hdr=true
     fi
 
+    # Set encoder and hw options based on GPU flag
+    hw_init=""
+    encoder="libx265"
+    sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+    hdr_vf=""
+    sdr_plain_vf=""
+    hdr_extra=(-pix_fmt yuv420p10le -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc")
+
+    if [ "$gpu" = "vaapi" ]; then
+        hw_init="-vaapi_device /dev/dri/renderD128"
+        encoder="hevc_vaapi"
+        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload"
+        hdr_vf="format=p010,hwupload"
+        sdr_plain_vf="format=nv12,hwupload"
+        hdr_extra=()
+    elif [ "$gpu" = "qsv" ]; then
+        hw_init="-init_hw_device qsv=qsv:hw -filter_hw_device qsv"
+        encoder="hevc_qsv"
+        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload=extra_hw_frames=64"
+        hdr_vf="format=p010le,hwupload=extra_hw_frames=64"
+        sdr_plain_vf="format=nv12,hwupload=extra_hw_frames=64"
+        hdr_extra=()
+    fi
+
     # Determine output mode
     if $output_sdr && $input_is_hdr; then
         echo "Mode: SDR output (HDR→SDR tone mapping)"
-        ffmpeg -i "$input_file" \
+        ffmpeg $hw_init -i "$input_file" \
             -map 0 \
             -b:v "$bitrate" \
-            -vf "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p" \
-            -c:v libx265 \
+            -vf "$sdr_vf" \
+            -c:v "$encoder" \
             -c:a copy -c:s copy \
             "$tmp_output"
     elif $input_is_hdr; then
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
-        ffmpeg -i "$input_file" \
+        ffmpeg $hw_init -i "$input_file" \
             -map 0 \
             -b:v "$bitrate" \
-            -c:v libx265 \
-            -pix_fmt yuv420p10le \
+            ${hdr_vf:+-vf "$hdr_vf"} \
+            -c:v "$encoder" \
+            "${hdr_extra[@]}" \
             -color_primaries bt2020 \
             -color_trc smpte2084 \
             -colorspace bt2020nc \
-            -x265-params "colorprim=bt2020:transfer=smpte2084:colormatrix=bt2020nc" \
             -c:a copy -c:s copy \
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg -i "$input_file" -map 0 -b:v "$bitrate" -c:v libx265 -c:a copy -c:s copy "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0 -b:v "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy -c:s copy "$tmp_output"
     fi
 
     # Move compressed file to final location
