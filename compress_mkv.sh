@@ -218,9 +218,8 @@ for input_file in "${mkv_files[@]}"; do
 
     echo "Starting compression..."
 
-    # Write to a temp file, then replace the original
-    input_dir=$(dirname "$input_file")
-    tmp_output=$(mktemp "${input_dir}/compress_mkv_XXXXXX.mkv")
+    # Write to a local temp file to avoid NFS write latency during encoding
+    tmp_output=$(mktemp "/tmp/compress_mkv_XXXXXX.mkv")
     rm "$tmp_output"
 
     # Detect if input is HDR
@@ -306,12 +305,14 @@ for input_file in "${mkv_files[@]}"; do
         ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng -map 0:s:m:language:eng -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy -c:s copy "$tmp_output"
     fi
 
-    # Move compressed file to final location
+    # Copy compressed file to final location
     if [ "$overwrite" = true ]; then
-        mv "$tmp_output" "$input_file"
+        echo "Copying to final location..."
+        rsync --progress "$tmp_output" "$input_file" && rm "$tmp_output"
     else
         output_file="${input_file%.mkv}_compressed.mkv"
-        mv "$tmp_output" "$output_file"
+        echo "Copying to final location..."
+        rsync --progress "$tmp_output" "$output_file" && rm "$tmp_output"
         echo "Output: $output_file"
     fi
 
