@@ -305,14 +305,18 @@ for input_file in "${mkv_files[@]}"; do
         ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng -map 0:s:m:language:eng -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy -c:s copy "$tmp_output"
     fi
 
-    # Copy compressed file to final location
+    # Copy compressed file to final location, preserving original creation timestamp
+    original_ts=$(stat -c '%Y' "$input_file" 2>/dev/null || stat -f '%m' "$input_file")
     if [ "$overwrite" = true ]; then
         echo "Copying to final location..."
         rsync --progress "$tmp_output" "$input_file" && rm "$tmp_output"
+        touch -r /dev/stdin "$input_file" <<< "" 2>/dev/null || true
+        touch -d "@$original_ts" "$input_file" 2>/dev/null || touch -t "$(date -r "$original_ts" '+%Y%m%d%H%M.%S')" "$input_file"
     else
         output_file="${input_file%.mkv}_compressed.mkv"
         echo "Copying to final location..."
         rsync --progress "$tmp_output" "$output_file" && rm "$tmp_output"
+        touch -d "@$original_ts" "$output_file" 2>/dev/null || touch -t "$(date -r "$original_ts" '+%Y%m%d%H%M.%S')" "$output_file"
         echo "Output: $output_file"
     fi
 
