@@ -125,6 +125,13 @@ if [ -f "$input_path" ] && [[ ! "$input_path" =~ \.mkv$ ]]; then
     echo "Warning: Input file doesn't have .mkv extension. Proceeding anyway..."
 fi
 
+# Detect if a file has interlaced video
+is_interlaced() {
+    local field_order
+    field_order=$(ffprobe -v error -select_streams v:0 -show_entries stream=field_order -of csv=s=x:p=0 "$1" 2>/dev/null)
+    [[ "$field_order" == "tt" || "$field_order" == "bb" || "$field_order" == "tb" || "$field_order" == "bt" ]]
+}
+
 # Detect if a file has HDR color transfer characteristics
 is_hdr() {
     local transfer
@@ -151,8 +158,10 @@ get_bitrate() {
         echo "40M"  # 4K
     elif [ "$width" -ge 1920 ]; then
         echo "15M"  # 1080p
+    elif [ "$width" -ge 1280 ]; then
+        echo "8M"   # 720p
     else
-        echo "10M"  # Lower resolutions
+        echo "3M"   # DVD (480p/576p)
     fi
 }
 
@@ -220,9 +229,17 @@ for input_file in "${mkv_files[@]}"; do
         input_is_hdr=true
     fi
 
+    # Detect if input is interlaced
+    input_is_interlaced=false
+    if is_interlaced "$input_file"; then
+        input_is_interlaced=true
+        echo "Interlaced input detected, will deinterlace"
+    fi
+
     # Set encoder and hw options based on GPU flag
     hw_init=""
     encoder="libx265"
+    deinterlace="yadif"
     sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
     hdr_vf=""
     sdr_plain_vf=""
@@ -231,6 +248,7 @@ for input_file in "${mkv_files[@]}"; do
     if [ "$gpu" = "vaapi" ]; then
         hw_init="-vaapi_device /dev/dri/renderD128"
         encoder="hevc_vaapi"
+        deinterlace="yadif"
         sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload"
         hdr_vf="format=p010,hwupload"
         sdr_plain_vf="format=nv12,hwupload"
@@ -238,10 +256,26 @@ for input_file in "${mkv_files[@]}"; do
     elif [ "$gpu" = "qsv" ]; then
         hw_init="-vaapi_device /dev/dri/renderD128"
         encoder="hevc_vaapi"
+        deinterlace="yadif"
         sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=nv12,hwupload"
         hdr_vf="format=p010,hwupload"
         sdr_plain_vf="format=nv12,hwupload"
         hdr_extra=(-low_power 1)
+    fi
+
+    # Prepend deinterlace filter if needed
+    if $input_is_interlaced; then
+        sdr_vf="$deinterlace,$sdr_vf"
+        if [ -n "$hdr_vf" ]; then
+            hdr_vf="$deinterlace,$hdr_vf"
+        else
+            hdr_vf="$deinterlace"
+        fi
+        if [ -n "$sdr_plain_vf" ]; then
+            sdr_plain_vf="$deinterlace,$sdr_plain_vf"
+        else
+            sdr_plain_vf="$deinterlace"
+        fi
     fi
 
     # Determine output mode
