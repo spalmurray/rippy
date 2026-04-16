@@ -13,7 +13,7 @@ if [ $# -eq 0 ]; then
     echo "  <input>       Path to input MKV file or directory"
     echo "  --sdr         Force SDR output (tone mapping from HDR input)"
     echo "                If not specified, outputs HDR10 (10-bit color)"
-    echo "  --gpu <type>  Use GPU hardware acceleration (vaapi for AMD, qsv for Intel)"
+    echo "  --gpu <type>  Use GPU hardware acceleration (vaapi, qsv, amf, or vulkan)"
     echo ""
     echo "Note: Output is always in MKV format to preserve multiple audio tracks"
     echo ""
@@ -44,8 +44,8 @@ while [ $# -gt 0 ]; do
         --gpu)
             shift
             gpu="$1"
-            if [[ "$gpu" != "vaapi" && "$gpu" != "qsv" ]]; then
-                echo "Error: --gpu must be 'vaapi' or 'qsv'"
+            if [[ "$gpu" != "vaapi" && "$gpu" != "qsv" && "$gpu" != "amf" && "$gpu" != "vulkan" ]]; then
+                echo "Error: --gpu must be 'vaapi', 'qsv', 'amf', or 'vulkan'"
                 exit 1
             fi
             ;;
@@ -260,6 +260,22 @@ for input_file in "${mkv_files[@]}"; do
         hdr_vf="format=p010,hwupload"
         sdr_plain_vf="format=nv12,hwupload"
         hdr_extra=(-low_power 1)
+    elif [ "$gpu" = "amf" ]; then
+        hw_init=""
+        encoder="hevc_amf"
+        deinterlace="yadif"
+        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+        hdr_vf=""
+        sdr_plain_vf=""
+        hdr_extra=(-pix_fmt yuv420p10le)
+    elif [ "$gpu" = "vulkan" ]; then
+        hw_init="-init_hw_device vulkan=vk:/dev/dri/renderD128"
+        encoder="hevc_vulkan"
+        deinterlace="yadif"
+        sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+        hdr_vf=""
+        sdr_plain_vf=""
+        hdr_extra=()
     fi
 
     # Prepend deinterlace filter if needed
