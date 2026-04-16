@@ -211,6 +211,19 @@ for input_file in "${mkv_files[@]}"; do
         continue
     fi
 
+    # Skip if source bitrate is already at or below the threshold for this resolution
+    src_bitrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
+    if [ -z "$src_bitrate" ] || [ "$src_bitrate" = "N/A" ]; then
+        # Fall back to container-level bitrate if per-stream is unavailable
+        src_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
+    fi
+    skip_bitrate_bps=$(numfmt --from=iec "$skip_bitrate" 2>/dev/null)
+    if [ -n "$src_bitrate" ] && [ "$src_bitrate" != "N/A" ] && [ -n "$skip_bitrate_bps" ] && [ "$src_bitrate" -le "$skip_bitrate_bps" ]; then
+        echo "Skipping $input_file (source bitrate $(numfmt --to=iec "$src_bitrate")bps <= threshold ${skip_bitrate}bps)"
+        success_count=$((success_count + 1))
+        continue
+    fi
+
     # Track file size before compression
     before_size=$(stat -c '%s' "$input_file" 2>/dev/null || stat -f '%z' "$input_file")
     total_before=$((total_before + before_size))
