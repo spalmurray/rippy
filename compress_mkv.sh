@@ -135,33 +135,33 @@ is_hdr() {
 }
 
 # Determine bitrate based on resolution
-get_bitrate() {
+get_quality_settings() {
     local resolution
     resolution=$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=s=x:p=0 "$1" 2>/dev/null)
 
     if [ -z "$resolution" ]; then
-        echo "10M"
+        echo "20 10M 20M"
         return
     fi
 
     local width height
     IFS='x' read -r width height <<< "$resolution"
 
-    # Determine bitrate based on resolution
+    # Returns: crf maxrate bufsize skip_bitrate
     if [ "$width" -ge 3840 ]; then
-        echo "40M"  # 4K
+        echo "20 32M 64M 25M"   # 4K
     elif [ "$width" -ge 1920 ]; then
-        echo "15M"  # 1080p
+        echo "20 16M 32M 10M"   # 1080p
     elif [ "$width" -ge 1280 ]; then
-        echo "8M"   # 720p
+        echo "20 8M 16M 4M"     # 720p
     else
-        echo "3M"   # DVD (480p/576p)
+        echo "20 4M 8M 2M"      # DVD (480p/576p)
     fi
 }
 
 # Display compression info (for single file)
 if [ ${#mkv_files[@]} -eq 1 ]; then
-    bitrate=$(get_bitrate "$input_path")
+    read -r crf maxrate bufsize skip_bitrate <<< "$(get_quality_settings "$input_path")"
 
     if $output_sdr && is_hdr "$input_path"; then
         mode_text="SDR output (HDR→SDR tone mapping)"
@@ -176,7 +176,7 @@ if [ ${#mkv_files[@]} -eq 1 ]; then
     echo "======================================"
     echo "Input:  $input_path"
     echo "Mode:   $mode_text"
-    echo "Bitrate: $bitrate"
+    echo "CRF:    $crf (maxrate: $maxrate)"
     echo "======================================"
     echo "Starting compression..."
 fi
@@ -200,14 +200,14 @@ for input_file in "${mkv_files[@]}"; do
         echo "  $input_file"
     fi
 
-    # Get bitrate based on resolution
-    bitrate=$(get_bitrate "$input_file")
+    # Get quality settings based on resolution
+    read -r crf maxrate bufsize skip_bitrate <<< "$(get_quality_settings "$input_file")"
 
-    # Skip if file bitrate is already at or near target
-    target_bps=$(echo "$bitrate" | sed 's/M//' | awk '{printf "%.0f", $1 * 1000000}')
+    # Skip if file bitrate is already at or near expected CRF output
+    target_bps=$(echo "$skip_bitrate" | sed 's/M//' | awk '{printf "%.0f", $1 * 1000000}')
     file_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
     if [ -n "$file_bitrate" ] && [ "$file_bitrate" -le $((target_bps + target_bps / 2)) ]; then
-        echo "Skipping $input_file (bitrate ${file_bitrate} bps already within 50% of target ${bitrate})"
+        echo "Skipping $input_file (bitrate ${file_bitrate} bps already near expected ${skip_bitrate})"
         success_count=$((success_count + 1))
         continue
     fi
@@ -278,11 +278,18 @@ for input_file in "${mkv_files[@]}"; do
     fi
 
     # Determine output mode
+    # Set quality args based on encoder type
+    if [ "$gpu" = "vaapi" ]; then
+        quality_args=(-rc_mode CQP -global_quality "$crf" -maxrate "$maxrate" -bufsize "$bufsize")
+    else
+        quality_args=(-crf "$crf" -maxrate "$maxrate" -bufsize "$bufsize")
+    fi
+
     if $output_sdr && $input_is_hdr; then
         echo "Mode: SDR output (HDR→SDR tone mapping)"
         ffmpeg $hw_init -i "$input_file" \
             -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" \
-            -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" \
+            "${quality_args[@]}" \
             -vf "$sdr_vf" \
             -c:v "$encoder" \
             -c:a copy "${sub_codec[@]}" \
@@ -291,7 +298,7 @@ for input_file in "${mkv_files[@]}"; do
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
         ffmpeg $hw_init -i "$input_file" \
             -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" \
-            -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" \
+            "${quality_args[@]}" \
             ${hdr_vf:+-vf "$hdr_vf"} \
             -c:v "$encoder" \
             "${hdr_extra[@]}" \
@@ -302,7 +309,7 @@ for input_file in "${mkv_files[@]}"; do
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" -b:v "$bitrate" -maxrate "$bitrate" -bufsize "$bitrate" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "$tmp_output"
     fi
 
     # Copy compressed file to final location, preserving original creation timestamp
