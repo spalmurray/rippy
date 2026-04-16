@@ -190,6 +190,8 @@ fi
 # Process files
 total_files=${#mkv_files[@]}
 success_count=0
+total_before=0
+total_after=0
 
 for input_file in "${mkv_files[@]}"; do
     if [ ${#mkv_files[@]} -gt 1 ]; then
@@ -209,6 +211,10 @@ for input_file in "${mkv_files[@]}"; do
         success_count=$((success_count + 1))
         continue
     fi
+
+    # Track file size before compression
+    before_size=$(stat -c '%s' "$input_file" 2>/dev/null || stat -f '%z' "$input_file")
+    total_before=$((total_before + before_size))
 
     echo "Starting compression..."
 
@@ -313,6 +319,17 @@ for input_file in "${mkv_files[@]}"; do
         echo "Output: $output_file"
     fi
 
+    # Track file size after compression
+    if [ "$overwrite" = true ]; then
+        after_size=$(stat -c '%s' "$input_file" 2>/dev/null || stat -f '%z' "$input_file")
+    else
+        after_size=$(stat -c '%s' "$output_file" 2>/dev/null || stat -f '%z' "$output_file")
+    fi
+    total_after=$((total_after + after_size))
+    saved=$((before_size - after_size))
+    pct=$((saved * 100 / before_size))
+    echo "Size: $(numfmt --to=iec "$before_size") -> $(numfmt --to=iec "$after_size") (saved $(numfmt --to=iec "$saved"), ${pct}%)"
+
     success_count=$((success_count + 1))
     echo ""
 done
@@ -324,5 +341,10 @@ if [ ${#mkv_files[@]} -gt 1 ]; then
     echo "Processed: $success_count / $total_files files"
 else
     echo "Compression complete!"
+fi
+if [ "$total_before" -gt 0 ]; then
+    total_saved=$((total_before - total_after))
+    total_pct=$((total_saved * 100 / total_before))
+    echo "Total: $(numfmt --to=iec "$total_before") -> $(numfmt --to=iec "$total_after") (saved $(numfmt --to=iec "$total_saved"), ${total_pct}%)"
 fi
 echo "======================================"
