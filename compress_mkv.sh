@@ -269,7 +269,7 @@ for input_file in "${mkv_files[@]}"; do
         sdr_plain_vf=""
         hdr_extra=(-pix_fmt yuv420p10le)
     elif [ "$gpu" = "vulkan" ]; then
-        hw_init="-init_hw_device vulkan=vk:/dev/dri/renderD128"
+        hw_init="-init_hw_device vulkan"
         encoder="hevc_vulkan"
         deinterlace="yadif"
         sdr_vf="zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
