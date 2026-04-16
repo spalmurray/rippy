@@ -203,11 +203,10 @@ for input_file in "${mkv_files[@]}"; do
     # Get quality settings based on resolution
     read -r crf maxrate bufsize skip_bitrate <<< "$(get_quality_settings "$input_file")"
 
-    # Skip if file bitrate is already at or near expected CRF output
-    target_bps=$(echo "$skip_bitrate" | sed 's/M//' | awk '{printf "%.0f", $1 * 1000000}')
-    file_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
-    if [ -n "$file_bitrate" ] && [ "$file_bitrate" -le $((target_bps + target_bps / 2)) ]; then
-        echo "Skipping $input_file (bitrate ${file_bitrate} bps already near expected ${skip_bitrate})"
+    # Skip if already compressed by this script
+    compressed_tag=$(ffprobe -v error -show_entries format_tags=COMPRESSED_BY -of csv=p=0 "$input_file" 2>/dev/null)
+    if [ "$compressed_tag" = "compress_mkv" ]; then
+        echo "Skipping $input_file (already compressed)"
         success_count=$((success_count + 1))
         continue
     fi
@@ -285,6 +284,8 @@ for input_file in "${mkv_files[@]}"; do
         quality_args=(-crf "$crf" -maxrate "$maxrate" -bufsize "$bufsize")
     fi
 
+    metadata=(-metadata "COMPRESSED_BY=compress_mkv")
+
     if $output_sdr && $input_is_hdr; then
         echo "Mode: SDR output (HDR→SDR tone mapping)"
         ffmpeg $hw_init -i "$input_file" \
@@ -293,6 +294,7 @@ for input_file in "${mkv_files[@]}"; do
             -vf "$sdr_vf" \
             -c:v "$encoder" \
             -c:a copy "${sub_codec[@]}" \
+            "${metadata[@]}" \
             "$tmp_output"
     elif $input_is_hdr; then
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
@@ -306,10 +308,11 @@ for input_file in "${mkv_files[@]}"; do
             -color_trc smpte2084 \
             -colorspace bt2020nc \
             -c:a copy "${sub_codec[@]}" \
+            "${metadata[@]}" \
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
     fi
 
     # Copy compressed file to final location, preserving original creation timestamp
