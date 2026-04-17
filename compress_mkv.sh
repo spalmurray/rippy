@@ -328,6 +328,18 @@ for input_file in "${mkv_files[@]}"; do
         ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
     fi
 
+    # Verify the compressed output achieves at least 33% size reduction
+    tmp_size=$(stat -c '%s' "$tmp_output" 2>/dev/null || stat -f '%z' "$tmp_output")
+    reduction_pct=$(( (before_size - tmp_size) * 100 / before_size ))
+    if [ "$reduction_pct" -lt 33 ]; then
+        echo "Insufficient reduction: $(numfmt --to=iec "$before_size") -> $(numfmt --to=iec "$tmp_size") (${reduction_pct}%, need >=33%). Discarding compressed file, keeping original."
+        rm "$tmp_output"
+        total_after=$((total_after + before_size))
+        success_count=$((success_count + 1))
+        echo ""
+        continue
+    fi
+
     # Copy compressed file to final location, preserving original creation timestamp
     original_ts=$(stat -c '%Y' "$input_file" 2>/dev/null || stat -f '%m' "$input_file")
     if [ "$overwrite" = true ]; then
