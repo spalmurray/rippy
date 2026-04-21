@@ -79,14 +79,15 @@ if [ -d "$input_path" ]; then
     echo "======================================"
     echo "Directory mode detected"
     echo "Input:  $input_path"
-    echo "Traversing up to 2 levels deep for MKV files..."
+    echo "Searching for MKV files..."
 
-    # Find all .mkv files up to 2 levels deep, pruning any directory tree that
-    # contains a `nocompress` marker file.
+    # Find all .mkv files, pruning any directory subtree that contains a
+    # `nocompress` marker file so only that subtree is skipped (siblings and
+    # other branches still get processed).
     mkv_files=()
     while IFS= read -r -d '' file; do
         mkv_files+=("$file")
-    done < <(find "$input_path" -maxdepth 2 \( -type d -exec test -e '{}/nocompress' \; -prune \) -o -type f -name "*.mkv" -print0)
+    done < <(find "$input_path" \( -type d -exec test -e '{}/nocompress' \; -prune \) -o -type f -name "*.mkv" -print0)
 
     # Check if any files were found
     if [ ${#mkv_files[@]} -eq 0 ]; then
