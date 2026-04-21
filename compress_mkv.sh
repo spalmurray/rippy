@@ -66,6 +66,12 @@ if [ ! -e "$input_path" ]; then
     exit 1
 fi
 
+# Persistent skip list (absolute paths, one per line) stored in the directory
+# the script is invoked from. Files listed here are skipped on future runs —
+# typically because a previous run couldn't shrink them past the reduction
+# threshold.
+skip_list_file="$(pwd)/compress_mkv_skip.txt"
+
 # Get list of MKV files
 if [ -d "$input_path" ]; then
     echo "======================================"
@@ -75,11 +81,12 @@ if [ -d "$input_path" ]; then
     echo "Input:  $input_path"
     echo "Traversing up to 2 levels deep for MKV files..."
 
-    # Find all .mkv files up to 2 levels deep
+    # Find all .mkv files up to 2 levels deep, pruning any directory tree that
+    # contains a `nocompress` marker file.
     mkv_files=()
     while IFS= read -r -d '' file; do
         mkv_files+=("$file")
-    done < <(find "$input_path" -maxdepth 2 -type f -name "*.mkv" -print0)
+    done < <(find "$input_path" -maxdepth 2 \( -type d -exec test -e '{}/nocompress' \; -prune \) -o -type f -name "*.mkv" -print0)
 
     # Check if any files were found
     if [ ${#mkv_files[@]} -eq 0 ]; then
@@ -132,6 +139,25 @@ is_hdr() {
     transfer=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=s=x:p=0 "$1" 2>/dev/null)
     # smpte2084 = PQ (HDR10), arib-std-b67 = HLG
     [[ "$transfer" == "smpte2084" || "$transfer" == "arib-std-b67" ]]
+}
+
+# Check for a `nocompress` marker file in the file's directory or any ancestor
+# directory up to (and including) the top-level input path. Used so users can
+# drop a `nocompress` file next to (or above) any mkv they want left alone.
+has_nocompress_marker() {
+    local file_dir root_abs dir
+    file_dir=$(cd "$(dirname "$1")" && pwd -P)
+    root_abs=$(cd "$2" && pwd -P)
+    dir="$file_dir"
+    while :; do
+        if [ -e "$dir/nocompress" ]; then
+            return 0
+        fi
+        if [ "$dir" = "$root_abs" ] || [ "$dir" = "/" ]; then
+            return 1
+        fi
+        dir=$(dirname "$dir")
+    done
 }
 
 # Determine bitrate based on resolution
@@ -200,6 +226,19 @@ for input_file in "${mkv_files[@]}"; do
         echo "  $input_file"
     fi
 
+    # Skip if a `nocompress` marker exists in this file's directory or any
+    # ancestor up to the input root.
+    if [ -d "$input_path" ]; then
+        nocompress_root="$input_path"
+    else
+        nocompress_root=$(dirname "$input_file")
+    fi
+    if has_nocompress_marker "$input_file" "$nocompress_root"; then
+        echo "Skipping $input_file (nocompress marker found)"
+        success_count=$((success_count + 1))
+        continue
+    fi
+
     # Get quality settings based on resolution
     read -r crf maxrate bufsize skip_bitrate <<< "$(get_quality_settings "$input_file")"
 
@@ -211,14 +250,22 @@ for input_file in "${mkv_files[@]}"; do
         continue
     fi
 
+    # Skip if a previous run added this file to the persistent skip list
+    input_abs="$(cd "$(dirname "$input_file")" && pwd -P)/$(basename "$input_file")"
+    if [ -f "$skip_list_file" ] && grep -Fxq -- "$input_abs" "$skip_list_file"; then
+        echo "Skipping $input_file (in $skip_list_file)"
+        success_count=$((success_count + 1))
+        continue
+    fi
+
     # Skip if source bitrate is already at or below the threshold for this resolution
-    src_bitrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
-    if [ -z "$src_bitrate" ] || [ "$src_bitrate" = "N/A" ]; then
+    src_bitrate=$(ffprobe -v error -select_streams v:0 -show_entries stream=bit_rate -of csv=p=0 "$input_file" 2>/dev/null | tr -d ',[:space:]')
+    if [[ ! "$src_bitrate" =~ ^[0-9]+$ ]]; then
         # Fall back to container-level bitrate if per-stream is unavailable
-        src_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null)
+        src_bitrate=$(ffprobe -v error -show_entries format=bit_rate -of csv=p=0 "$input_file" 2>/dev/null | tr -d ',[:space:]')
     fi
     skip_bitrate_bps=$(numfmt --from=iec "$skip_bitrate" 2>/dev/null)
-    if [ -n "$src_bitrate" ] && [ "$src_bitrate" != "N/A" ] && [ -n "$skip_bitrate_bps" ] && [ "$src_bitrate" -le "$skip_bitrate_bps" ]; then
+    if [[ "$src_bitrate" =~ ^[0-9]+$ ]] && [ -n "$skip_bitrate_bps" ] && [ "$src_bitrate" -le "$skip_bitrate_bps" ]; then
         echo "Skipping $input_file (source bitrate $(numfmt --to=iec "$src_bitrate")bps <= threshold ${skip_bitrate}bps)"
         success_count=$((success_count + 1))
         continue
@@ -334,6 +381,11 @@ for input_file in "${mkv_files[@]}"; do
     if [ "$reduction_pct" -lt 33 ]; then
         echo "Insufficient reduction: $(numfmt --to=iec "$before_size") -> $(numfmt --to=iec "$tmp_size") (${reduction_pct}%, need >=33%). Discarding compressed file, keeping original."
         rm "$tmp_output"
+
+        # Record this file so future runs skip it.
+        echo "$input_abs" >> "$skip_list_file"
+        echo "Added to skip list: $skip_list_file"
+
         total_after=$((total_after + before_size))
         success_count=$((success_count + 1))
         echo ""
