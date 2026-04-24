@@ -337,6 +337,13 @@ for input_file in "${mkv_files[@]}"; do
         sub_codec=(-c:s copy)
     fi
 
+    # Map English audio if tagged, otherwise keep all audio tracks
+    if ffprobe -v error -select_streams a -show_entries stream_tags=language -of csv=p=0 "$input_file" 2>/dev/null | grep -q "eng"; then
+        audio_map=(-map "0:a:m:language:eng")
+    else
+        audio_map=(-map 0:a)
+    fi
+
     # Determine output mode
     # Set quality args based on encoder type
     if [ "$gpu" = "vaapi" ]; then
@@ -350,7 +357,7 @@ for input_file in "${mkv_files[@]}"; do
     if $output_sdr && $input_is_hdr; then
         echo "Mode: SDR output (HDR→SDR tone mapping)"
         ffmpeg $hw_init -i "$input_file" \
-            -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" \
+            -map 0:v "${audio_map[@]}" "${sub_map[@]}" \
             "${quality_args[@]}" \
             -vf "$sdr_vf" \
             -c:v "$encoder" \
@@ -360,7 +367,7 @@ for input_file in "${mkv_files[@]}"; do
     elif $input_is_hdr; then
         echo "Mode: HDR10 passthrough (preserving HDR metadata)"
         ffmpeg $hw_init -i "$input_file" \
-            -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" \
+            -map 0:v "${audio_map[@]}" "${sub_map[@]}" \
             "${quality_args[@]}" \
             ${hdr_vf:+-vf "$hdr_vf"} \
             -c:v "$encoder" \
@@ -373,7 +380,7 @@ for input_file in "${mkv_files[@]}"; do
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg $hw_init -i "$input_file" -map 0:v -map 0:a:m:language:eng "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0:v "${audio_map[@]}" "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
     fi
 
     # Verify the compressed output achieves at least 33% size reduction
