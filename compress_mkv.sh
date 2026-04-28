@@ -136,10 +136,16 @@ is_interlaced() {
 
 # Detect if a file has HDR color transfer characteristics
 is_hdr() {
-    local transfer
-    transfer=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=s=x:p=0 "$1" 2>/dev/null)
+    local transfer color_primaries
+    transfer=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_transfer -of csv=s=x:p=0 "$1" 2>/dev/null | tr -d ',')
     # smpte2084 = PQ (HDR10), arib-std-b67 = HLG
-    [[ "$transfer" == "smpte2084" || "$transfer" == "arib-std-b67" ]]
+    if [[ "$transfer" == "smpte2084" || "$transfer" == "arib-std-b67" ]]; then
+        return 0
+    fi
+    # Fallback: BT.2020 primaries indicate wide color gamut / HDR content
+    # even when the transfer characteristic isn't explicitly tagged
+    color_primaries=$(ffprobe -v error -select_streams v:0 -show_entries stream=color_primaries -of csv=s=x:p=0 "$1" 2>/dev/null | tr -d ',')
+    [[ "$color_primaries" == "bt2020" ]]
 }
 
 # Check for a `nocompress` marker file in the file's directory or any ancestor
@@ -361,6 +367,7 @@ for input_file in "${mkv_files[@]}"; do
             "${quality_args[@]}" \
             -vf "$sdr_vf" \
             -c:v "$encoder" \
+            -color_primaries bt709 -color_trc bt709 -colorspace bt709 \
             -c:a copy "${sub_codec[@]}" \
             "${metadata[@]}" \
             "$tmp_output"
@@ -380,7 +387,7 @@ for input_file in "${mkv_files[@]}"; do
             "$tmp_output"
     else
         echo "Mode: SDR output"
-        ffmpeg $hw_init -i "$input_file" -map 0:v "${audio_map[@]}" "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
+        ffmpeg $hw_init -i "$input_file" -map 0:v "${audio_map[@]}" "${sub_map[@]}" "${quality_args[@]}" ${sdr_plain_vf:+-vf "$sdr_plain_vf"} -c:v "$encoder" -color_primaries bt709 -color_trc bt709 -colorspace bt709 -c:a copy "${sub_codec[@]}" "${metadata[@]}" "$tmp_output"
     fi
 
     # Verify the compressed output achieves at least 33% size reduction
